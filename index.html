@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#10251b" />
+    <title>Listen to Mușchii</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Georgia, "Times New Roman", serif;
+        background: #10251b;
+        color: #f1f4df;
+      }
+      * { box-sizing: border-box; }
+      body {
+        min-height: 100svh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 20% 15%, #53714b55 0 12%, transparent 35%),
+          radial-gradient(circle at 80% 75%, #81935144 0 10%, transparent 38%),
+          linear-gradient(155deg, #182f23, #07150f);
+      }
+      main {
+        width: min(100%, 34rem);
+        min-height: 100svh;
+        padding: max(3rem, env(safe-area-inset-top)) 1.5rem
+          max(2rem, env(safe-area-inset-bottom));
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      .eyebrow {
+        margin: 0 0 1rem;
+        font: 0.72rem/1.2 system-ui, sans-serif;
+        letter-spacing: 0.24em;
+        text-transform: uppercase;
+        color: #b8c69d;
+      }
+      h1 {
+        max-width: 10ch;
+        margin: 0;
+        font-size: clamp(3.3rem, 15vw, 6.5rem);
+        font-weight: 400;
+        line-height: 0.88;
+        letter-spacing: -0.055em;
+      }
+      .intro {
+        max-width: 28rem;
+        margin: 1.8rem 0 2.2rem;
+        font: 1rem/1.55 system-ui, sans-serif;
+        color: #d2d9c2;
+      }
+      button {
+        min-width: 13rem;
+        min-height: 3.6rem;
+        padding: 0.9rem 1.5rem;
+        border: 1px solid #dfe8c5;
+        border-radius: 999px;
+        background: #dfe8c5;
+        color: #10251b;
+        font: 600 1rem/1 system-ui, sans-serif;
+        cursor: pointer;
+        transition: transform 160ms ease, background 160ms ease;
+      }
+      button:active { transform: scale(0.97); }
+      button.listening { background: transparent; color: #f1f4df; }
+      .reading {
+        width: 100%;
+        margin-top: 2.2rem;
+        min-height: 6.2rem;
+        opacity: 0;
+        transition: opacity 500ms ease;
+      }
+      .reading.visible { opacity: 1; }
+      .notes {
+        margin: 0;
+        font-size: 2rem;
+        letter-spacing: 0.08em;
+      }
+      .color-map {
+        max-width: 28rem;
+        margin: 0.75rem auto 0;
+        font: 0.76rem/1.6 system-ui, sans-serif;
+        color: #bdc9ad;
+      }
+      .status {
+        margin: 0.55rem 0 0;
+        font: 0.78rem/1.4 system-ui, sans-serif;
+        color: #aebba0;
+      }
+      .pulse {
+        width: 0.55rem;
+        height: 0.55rem;
+        display: inline-block;
+        margin-right: 0.45rem;
+        border-radius: 50%;
+        background: #a6cc78;
+        box-shadow: 0 0 0 0 #a6cc7877;
+        animation: pulse 1.6s infinite;
+      }
+      @keyframes pulse {
+        70% { box-shadow: 0 0 0 0.6rem transparent; }
+        100% { box-shadow: 0 0 0 0 transparent; }
+      }
+      footer {
+        margin-top: auto;
+        padding-top: 2rem;
+        font: 0.68rem/1.4 system-ui, sans-serif;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: #82917d;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow">Design Signals 2026</p>
+      <h1>Listen to Mușchii</h1>
+      <p class="intro">
+        A camera observes the living surface. Its changing color and light
+        become a shared, live composition.
+      </p>
+      <button id="listen" type="button">Begin listening</button>
+      <section id="reading" class="reading" aria-live="polite">
+        <p id="notes" class="notes">— + —</p>
+        <p id="color-map" class="color-map">
+          Green–magenta → — · Blue–yellow → — · Light → —
+        </p>
+        <p id="status" class="status">Connecting to the moss…</p>
+      </section>
+      <footer>Headphones recommended</footer>
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="./config.js"></script>
+    <script>
+      const button = document.querySelector("#listen");
+      const reading = document.querySelector("#reading");
+      const notes = document.querySelector("#notes");
+      const colorMap = document.querySelector("#color-map");
+      const status = document.querySelector("#status");
+
+      let audioContext;
+      let supabaseClient;
+      let liveChannel;
+      let listening = false;
+      let lastSequence;
+
+      const lightnessVoices = [
+        ["C3", 130.81],
+        ["D3", 146.83],
+        ["E3", 164.81],
+        ["G3", 196.0],
+        ["A3", 220.0],
+        ["C4", 261.63],
+        ["D4", 293.66],
+        ["E4", 329.63],
+        ["G4", 392.0],
+        ["A4", 440.0],
+        ["C5", 523.25],
+      ];
+
+      function lightnessVoice(lightness) {
+        const normalized = Math.max(0, Math.min(lightness / 100, 1));
+        return lightnessVoices[
+          Math.floor(normalized * (lightnessVoices.length - 1))
+        ];
+      }
+
+      function playReading(data) {
+        if (!audioContext || audioContext.state !== "running") return;
+
+        const duration = Math.max(1.5, Math.min(data.duration_ms / 1000, 4));
+        const now = audioContext.currentTime;
+        const brightness = Math.max(0, Math.min(data.lightness / 100, 1));
+        const [, lightFrequency] = lightnessVoice(data.lightness);
+        const master = audioContext.createGain();
+        const filter = audioContext.createBiquadFilter();
+        filter.type = "lowpass";
+        filter.frequency.setValueAtTime(700 + brightness * 4300, now);
+        filter.Q.setValueAtTime(0.7, now);
+        master.gain.setValueAtTime(0.0001, now);
+        master.gain.exponentialRampToValueAtTime(0.055, now + duration * 0.3);
+        master.gain.setValueAtTime(0.055, now + duration * 0.7);
+        master.gain.exponentialRampToValueAtTime(0.0001, now + duration);
+        filter.connect(master);
+        master.connect(audioContext.destination);
+
+        [data.frequency_a, data.frequency_b].forEach((frequency) => {
+          const oscillator = audioContext.createOscillator();
+          oscillator.type = "sine";
+          oscillator.frequency.setValueAtTime(frequency, now);
+          oscillator.connect(filter);
+          oscillator.start(now);
+          oscillator.stop(now + duration);
+        });
+
+        const shimmer = audioContext.createGain();
+        shimmer.gain.setValueAtTime(0.22 + brightness * 0.2, now);
+        shimmer.connect(filter);
+        const lightOscillator = audioContext.createOscillator();
+        lightOscillator.type = "sine";
+        lightOscillator.frequency.setValueAtTime(lightFrequency, now);
+        lightOscillator.connect(shimmer);
+        lightOscillator.start(now);
+        lightOscillator.stop(now + duration);
+      }
+
+      function receiveReading(data) {
+        const age = Date.now() - new Date(data.updated_at).getTime();
+        if (age > 10000) {
+          status.textContent = "Waiting for the moss station…";
+          return;
+        }
+
+        status.innerHTML = '<span class="pulse"></span>Live from the moss';
+        const [lightNote] = lightnessVoice(data.lightness);
+        notes.textContent = `${data.pitch_a} + ${data.pitch_b} + ${lightNote}`;
+        colorMap.textContent =
+          `Green–magenta → ${data.pitch_a} · ` +
+          `Blue–yellow → ${data.pitch_b} · ` +
+          `Light → ${lightNote}`;
+        if (data.sequence !== lastSequence) {
+          lastSequence = data.sequence;
+          playReading(data);
+        }
+      }
+
+      async function connectToMoss() {
+        const config = window.MOSS_CONFIG || {};
+        if (!config.supabaseUrl || !config.anonKey) {
+          status.textContent = "This installation has not been configured yet.";
+          return;
+        }
+
+        try {
+          supabaseClient ||= window.supabase.createClient(
+            config.supabaseUrl,
+            config.anonKey,
+          );
+          const { data, error } = await supabaseClient
+            .from("live_state")
+            .select("*")
+            .eq("id", 1)
+            .single();
+          if (error) throw error;
+          receiveReading(data);
+
+          if (!liveChannel) {
+            liveChannel = supabaseClient
+              .channel("moss-live-state")
+              .on(
+                "postgres_changes",
+                {
+                  event: "UPDATE",
+                  schema: "public",
+                  table: "live_state",
+                  filter: "id=eq.1",
+                },
+                (payload) => receiveReading(payload.new),
+              )
+              .subscribe((connectionStatus) => {
+                if (connectionStatus === "CHANNEL_ERROR") {
+                  status.textContent = "Reconnecting…";
+                }
+              });
+          }
+        } catch (error) {
+          status.textContent = "Reconnecting…";
+          console.error(error);
+        }
+      }
+
+      async function startListening() {
+        audioContext ||= new AudioContext();
+        await audioContext.resume();
+        listening = true;
+        button.textContent = "Listening";
+        button.classList.add("listening");
+        reading.classList.add("visible");
+        await connectToMoss();
+      }
+
+      function stopListening() {
+        listening = false;
+        if (liveChannel) {
+          supabaseClient.removeChannel(liveChannel);
+          liveChannel = undefined;
+        }
+        audioContext?.suspend();
+        button.textContent = "Begin listening";
+        button.classList.remove("listening");
+        status.textContent = "Listening paused";
+      }
+
+      button.addEventListener("click", () => {
+        if (listening) stopListening();
+        else startListening();
+      });
+    </script>
+  </body>
+</html>
