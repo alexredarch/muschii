@@ -148,7 +148,7 @@
       <button id="listen" type="button">Begin listening</button>
       <label class="volume">
         Volume
-        <input id="volume" type="range" min="0" max="100" value="85" />
+        <input id="volume" type="range" min="0" max="100" value="40" />
       </label>
       <section id="reading" class="reading" aria-live="polite">
         <p id="notes" class="notes">— + —</p>
@@ -177,15 +177,13 @@
       let listening = false;
       let lastSequence;
 
-      // Full slider position. Low moss notes are doubled into higher octaves,
-      // which a phone speaker can actually play.
-      const mossLevel = 1;
-      const storedVolume = localStorage.getItem("muschii-level");
+      // Full slider position. This is the previous fixed earphone level.
+      const mossLevel = 0.32;
+      const storedVolume = localStorage.getItem("muschii-volume");
       const savedVolume = Number(storedVolume);
       if (storedVolume !== null && Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 100) {
         volumeInput.value = String(savedVolume);
       }
-      localStorage.removeItem("muschii-volume");
 
       const lightnessVoices = [
         ["C3", 130.81],
@@ -218,41 +216,33 @@
         const master = audioContext.createGain();
         const filter = audioContext.createBiquadFilter();
         filter.type = "lowpass";
-        filter.frequency.setValueAtTime(2800 + brightness * 2200, now);
+        filter.frequency.setValueAtTime(700 + brightness * 4300, now);
         filter.Q.setValueAtTime(0.7, now);
-        const attack = 0.25;
-        const release = 0.7;
         master.gain.setValueAtTime(0.0001, now);
-        master.gain.exponentialRampToValueAtTime(mossLevel, now + attack);
-        master.gain.setValueAtTime(mossLevel, now + Math.max(attack, duration - release));
+        master.gain.exponentialRampToValueAtTime(mossLevel, now + duration * 0.3);
+        master.gain.setValueAtTime(mossLevel, now + duration * 0.7);
         master.gain.exponentialRampToValueAtTime(0.0001, now + duration);
         filter.connect(master);
         master.connect(outputGain);
 
-        const addVoice = (frequency, share) => {
-          const partials = [
-            [1, 0.05],
-            [2, 0.12],
-            [4, 0.33],
-            [8, 0.5],
-          ].filter(([multiple]) => frequency * multiple <= 2400);
-          const weightSum = partials.reduce((sum, [, weight]) => sum + weight, 0);
-          partials.forEach(([multiple, weight]) => {
-            const oscillator = audioContext.createOscillator();
-            const partial = audioContext.createGain();
-            oscillator.type = "sine";
-            oscillator.frequency.setValueAtTime(frequency * multiple, now);
-            partial.gain.setValueAtTime((share * weight) / weightSum, now);
-            oscillator.connect(partial);
-            partial.connect(filter);
-            oscillator.start(now);
-            oscillator.stop(now + duration);
-          });
-        };
+        [data.frequency_a, data.frequency_b].forEach((frequency) => {
+          const oscillator = audioContext.createOscillator();
+          oscillator.type = "sine";
+          oscillator.frequency.setValueAtTime(frequency, now);
+          oscillator.connect(filter);
+          oscillator.start(now);
+          oscillator.stop(now + duration);
+        });
 
-        addVoice(data.frequency_a, 0.4);
-        addVoice(data.frequency_b, 0.4);
-        addVoice(lightFrequency, 0.16);
+        const shimmer = audioContext.createGain();
+        shimmer.gain.setValueAtTime(0.22 + brightness * 0.2, now);
+        shimmer.connect(filter);
+        const lightOscillator = audioContext.createOscillator();
+        lightOscillator.type = "sine";
+        lightOscillator.frequency.setValueAtTime(lightFrequency, now);
+        lightOscillator.connect(shimmer);
+        lightOscillator.start(now);
+        lightOscillator.stop(now + duration);
       }
 
       function receiveReading(data) {
@@ -321,7 +311,7 @@
       }
 
       function applyVolume() {
-        localStorage.setItem("muschii-level", volumeInput.value);
+        localStorage.setItem("muschii-volume", volumeInput.value);
         if (!outputGain || !audioContext) return;
         outputGain.gain.setValueAtTime(
           Number(volumeInput.value) / 100,
