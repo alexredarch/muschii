@@ -152,6 +152,9 @@
       let listening = false;
       let lastSequence;
 
+      // Overall moss loudness. 1 is full scale; three voices share this level.
+      const mossLevel = 0.18;
+
       const lightnessVoices = [
         ["C3", 130.81],
         ["D3", 146.83],
@@ -186,8 +189,8 @@
         filter.frequency.setValueAtTime(700 + brightness * 4300, now);
         filter.Q.setValueAtTime(0.7, now);
         master.gain.setValueAtTime(0.0001, now);
-        master.gain.exponentialRampToValueAtTime(0.055, now + duration * 0.3);
-        master.gain.setValueAtTime(0.055, now + duration * 0.7);
+        master.gain.exponentialRampToValueAtTime(mossLevel, now + duration * 0.3);
+        master.gain.setValueAtTime(mossLevel, now + duration * 0.7);
         master.gain.exponentialRampToValueAtTime(0.0001, now + duration);
         filter.connect(master);
         master.connect(audioContext.destination);
