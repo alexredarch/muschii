@@ -179,8 +179,9 @@
 
       // Full slider position. This is the previous fixed earphone level.
       const mossLevel = 0.32;
-      const savedVolume = Number(localStorage.getItem("muschii-volume"));
-      if (Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 100) {
+      const storedVolume = localStorage.getItem("muschii-volume");
+      const savedVolume = Number(storedVolume);
+      if (storedVolume !== null && Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 100) {
         volumeInput.value = String(savedVolume);
       }
 
