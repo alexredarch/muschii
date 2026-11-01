@@ -70,6 +70,25 @@
       }
       button:active { transform: scale(0.97); }
       button.listening { background: transparent; color: #f1f4df; }
+      .volume {
+        width: min(100%, 18rem);
+        margin-top: 1.5rem;
+        display: grid;
+        grid-template-columns: auto 1fr;
+        align-items: center;
+        gap: 0.85rem;
+        font: 0.72rem/1 system-ui, sans-serif;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        color: #b8c69d;
+      }
+      .volume input {
+        width: 100%;
+        height: 2.2rem;
+        margin: 0;
+        accent-color: #dfe8c5;
+        cursor: pointer;
+      }
       .reading {
         width: 100%;
         margin-top: 2.2rem;
@@ -127,6 +146,10 @@
         become a shared, live composition.
       </p>
       <button id="listen" type="button">Begin listening</button>
+      <label class="volume">
+        Volume
+        <input id="volume" type="range" min="0" max="100" value="40" />
+      </label>
       <section id="reading" class="reading" aria-live="polite">
         <p id="notes" class="notes">— + —</p>
         <p id="color-map" class="color-map">
@@ -141,19 +164,25 @@
     <script src="./config.js"></script>
     <script>
       const button = document.querySelector("#listen");
+      const volumeInput = document.querySelector("#volume");
       const reading = document.querySelector("#reading");
       const notes = document.querySelector("#notes");
       const colorMap = document.querySelector("#color-map");
       const status = document.querySelector("#status");
 
       let audioContext;
+      let outputGain;
       let supabaseClient;
       let liveChannel;
       let listening = false;
       let lastSequence;
 
-      // Overall moss loudness. 1 is full scale; three voices share this level.
+      // Full slider position. This is the previous fixed earphone level.
       const mossLevel = 0.32;
+      const savedVolume = Number(localStorage.getItem("muschii-volume"));
+      if (Number.isFinite(savedVolume) && savedVolume >= 0 && savedVolume <= 100) {
+        volumeInput.value = String(savedVolume);
+      }
 
       const lightnessVoices = [
         ["C3", 130.81],
@@ -193,7 +222,7 @@
         master.gain.setValueAtTime(mossLevel, now + duration * 0.7);
         master.gain.exponentialRampToValueAtTime(0.0001, now + duration);
         filter.connect(master);
-        master.connect(audioContext.destination);
+        master.connect(outputGain);
 
         [data.frequency_a, data.frequency_b].forEach((frequency) => {
           const oscillator = audioContext.createOscillator();
@@ -280,9 +309,26 @@
         }
       }
 
+      function applyVolume() {
+        localStorage.setItem("muschii-volume", volumeInput.value);
+        if (!outputGain || !audioContext) return;
+        outputGain.gain.setValueAtTime(
+          Number(volumeInput.value) / 100,
+          audioContext.currentTime,
+        );
+      }
+
       async function startListening() {
         audioContext ||= new AudioContext();
         await audioContext.resume();
+        if (!outputGain) {
+          outputGain = audioContext.createGain();
+          outputGain.connect(audioContext.destination);
+        }
+        outputGain.gain.setValueAtTime(
+          Number(volumeInput.value) / 100,
+          audioContext.currentTime,
+        );
         listening = true;
         button.textContent = "Listening";
         button.classList.add("listening");
@@ -306,6 +352,7 @@
         if (listening) stopListening();
         else startListening();
       });
+      volumeInput.addEventListener("input", applyVolume);
     </script>
   </body>
 </html>
